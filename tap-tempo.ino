@@ -23,21 +23,28 @@ uint16_t
 uint8_t
   prevButton;    // Value of last digitalRead()
 uint8_t
-  buttonPin = 5;
+  buttonPin = 5,
+  resetPin = 3;
+
+bool idleDisplay = true;
 
 void setup() {
-  if(F_CPU == 16000000) clock_prescale_set(clock_div_1);
   disp.begin(0x70);
   pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(resetPin, INPUT_PULLUP);
   prevButton = digitalRead(buttonPin);
 }
 
 static unsigned long debounce() { // Waits for change in button state
   uint8_t       b;
-  unsigned long start, last;
-  long          d;
+  unsigned long start, last, lastDraw;
+  long          d, drawInterval = 300000L;
 
   start = micros();
+  lastDraw = start - drawInterval;
+  int drawIndex = 0;
+  char text[] = "   TAP the BEAT  ";
+  int textLength = sizeof(text) - 1;
 
   for(;;) {
     last = micros();
@@ -48,27 +55,27 @@ static unsigned long debounce() { // Waits for change in button state
       }
     } // Else button unchanged...do other things...
 
-    d = (last - start) - 4000000L; // Function start time minus 4 sec
-    if(d > 0) {                    // > 4 sec with no button change?
+    bool resetPressed = !digitalRead(resetPin);
+
+    d = (last - start) - 1500000L; // Function start time minus 1.5 sec
+    if(d > 0 || resetPressed) {    // > 1.5 sec with no button change?
       nBeats = 0;                  // Reset counters
       prevBeat = sum = 0L;
     }
 
+    if (resetPressed) {
+      idleDisplay = true;
+    } 
+
     // If no prior tap has been registered, program is waiting
     // for initial tap.  Show instructions on display.
-    if(!prevBeat) {
-      if(!(d & 0x00100000)) { // ~1.05 second cycle
-        disp.writeDigitAscii(0, 'T');
-        disp.writeDigitAscii(1, 'A');
-        disp.writeDigitAscii(2, 'P');
-        disp.writeDigitAscii(3, ' ');
-      } else {
-        disp.writeDigitAscii(0, 'B');
-        disp.writeDigitAscii(1, 'E');
-        disp.writeDigitAscii(2, 'A');
-        disp.writeDigitAscii(3, 'T');
+    if(!prevBeat && idleDisplay && last - lastDraw > drawInterval) {
+      for (int x = 0; x < 4; x++) {
+        disp.writeDigitAscii(x, text[(drawIndex + x) % textLength]);
       }
       disp.writeDisplay();
+      lastDraw = last;
+      drawIndex = (drawIndex + 1) % textLength;
     }
   }
 }
@@ -78,6 +85,7 @@ void loop() {
   uint16_t      b;
 
   t = debounce(); // Wait for new button state
+  idleDisplay = false;
 
   if(prevButton == HIGH) {             // Low-to-high (button tap)?
     if(prevBeat) {                     // Button tapped before?
@@ -86,12 +94,17 @@ void loop() {
       b    = (sum / nBeats);              // Average time per tap
       if(b > 9999) b = 9999;
       for (int x = 3; x >= 0; x--) {
+        if (b == 0 && x < 2) {
+          disp.writeDigitAscii(x, ' '); // Blank instead of leading zeroes
+          continue;
+        }
         disp.writeDigitAscii(x, '0' + (b % 10), x == 2);
         b = b / 10;
       }
     } else {                               // First tap
       disp.clear();                        // Clear display, but...
-      disp.writeDigitAscii(2, ' ', true);  // a dot shows it's on
+      disp.writeDigitAscii(2, '-', true);  // a dot shows it's on
+      disp.writeDigitAscii(3, '-');
     }
     disp.writeDisplay();
     prevBeat = t;                      // Record time of last tap
