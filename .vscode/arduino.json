@@ -1,0 +1,5 @@
+{
+    "sketch": "tap-tempo.ino",
+    "board": "arduino:avr:uno",
+    "port": "COM5"
+}
