@@ -1,112 +1,76 @@
-/*******************************************************************
-  Tap tempo sketch for Arduino Uno.  Tap a button in sync with
-  a beat, LED display shows beats per minute.  Stop tapping for
-  4 second to reset counter.
-
-  Required libraries include Adafruit_LEDBackpack and Adafruit_GFX.
-
-  Pushbutton between Pin #5 and GND.
- *******************************************************************/
-
 #include <Wire.h>
 #include <Adafruit_LEDBackpack.h>
 #include <Adafruit_GFX.h>
 #include <avr/power.h>
+#include "TempoController.h"
 
-Adafruit_AlphaNum4 disp = Adafruit_AlphaNum4();
+#define IDLE_DRAW_INTERVAL 300000L
 
-unsigned long
-  prevBeat = 0L, // Time of last button tap
-  sum      = 0L; // Cumulative time of all beats
-uint16_t
-  nBeats   = 0;  // Number of beats counted
-uint8_t
-  prevButton;    // Value of last digitalRead()
-uint8_t
-  buttonPin = 5,
-  resetPin = 3;
+uint8_t resetPin = 3;
 
 bool idleDisplay = true;
+unsigned long lastIdlePrint = 0;
 
-void setup() {
-  disp.begin(0x70);
-  pinMode(buttonPin, INPUT_PULLUP);
+const char idleString[] = "      Hello world ";
+const unsigned long idleStringSize = sizeof(idleString) - 1;
+
+TempoController *tempoControllers[2] = {};
+const unsigned long tempoControllerCount = sizeof(tempoControllers) / sizeof(*tempoControllers);
+
+void setup()
+{
   pinMode(resetPin, INPUT_PULLUP);
-  prevButton = digitalRead(buttonPin);
+  tempoControllers[0] = new TempoController(0x70, 5);
+  tempoControllers[1] = new TempoController(0x71, 6);
 }
 
-static unsigned long debounce() { // Waits for change in button state
-  uint8_t       b;
-  unsigned long start, last, lastDraw;
-  long          d, drawInterval = 300000L;
-
-  start = micros();
-  lastDraw = start - drawInterval;
-  int drawIndex = 0;
-  char text[] = "   TAP the BEAT  ";
-  int textLength = sizeof(text) - 1;
-
-  for(;;) {
-    last = micros();
-    while((b = digitalRead(buttonPin)) != prevButton) { // Button changed?
-      if((micros() - last) > 25000L) {          // Sustained > 25 mS?
-        prevButton = b;                         // Save new state
-        return last;                            // Return time of change
-      }
-    } // Else button unchanged...do other things...
-
-    bool resetPressed = !digitalRead(resetPin);
-
-    d = (last - start) - 1500000L; // Function start time minus 1.5 sec
-    if(d > 0 || resetPressed) {    // > 1.5 sec with no button change?
-      nBeats = 0;                  // Reset counters
-      prevBeat = sum = 0L;
+int idleIndex = 0;
+void drawIdle()
+{
+  for (int i = 0; i < tempoControllerCount; i++)
+  {
+    Adafruit_AlphaNum4 *disp = &tempoControllers[i]->disp;
+    // disp.clear();
+    for (int ii = 0; ii < 4; ii++)
+    {
+      int ind = (i * 4 + ii + idleIndex) % idleStringSize;
+      disp->writeDigitAscii(ii, idleString[ind]);
     }
+    disp->writeDisplay();
+  }
+  idleIndex = (idleIndex + 1) % idleStringSize;
+}
 
-    if (resetPressed) {
-      idleDisplay = true;
-    } 
+void loop()
+{
+  unsigned long now = micros();
 
-    // If no prior tap has been registered, program is waiting
-    // for initial tap.  Show instructions on display.
-    if(!prevBeat && idleDisplay && last - lastDraw > drawInterval) {
-      for (int x = 0; x < 4; x++) {
-        disp.writeDigitAscii(x, text[(drawIndex + x) % textLength]);
-      }
-      disp.writeDisplay();
-      lastDraw = last;
-      drawIndex = (drawIndex + 1) % textLength;
+  if (!digitalRead(resetPin)) {
+    for (int i = 0; i < tempoControllerCount; i++) {
+      tempoControllers[i]->clearData();
+    }
+    idleDisplay = true;
+    idleIndex = 0;
+  }
+
+  bool anyDraw = false;
+  for (int i = 0; i < tempoControllerCount; i++)
+  {
+    tempoControllers[i]->tick();
+    if (tempoControllers[i]->wantsDraw)
+      anyDraw = true;
+  }
+
+  if (anyDraw)
+  {
+    idleDisplay = false;
+    for (int i = 0; i < tempoControllerCount; i++) {
+      tempoControllers[i]->draw();
     }
   }
-}
-
-void loop() {
-  unsigned long t;
-  uint16_t      b;
-
-  t = debounce(); // Wait for new button state
-  idleDisplay = false;
-
-  if(prevButton == HIGH) {             // Low-to-high (button tap)?
-    if(prevBeat) {                     // Button tapped before?
-      nBeats++;
-      sum += 600000000L / (t - prevBeat); // BPM * 10
-      b    = (sum / nBeats);              // Average time per tap
-      if(b > 9999) b = 9999;
-      for (int x = 3; x >= 0; x--) {
-        if (b == 0 && x < 2) {
-          disp.writeDigitAscii(x, ' '); // Blank instead of leading zeroes
-          continue;
-        }
-        disp.writeDigitAscii(x, '0' + (b % 10), x == 2);
-        b = b / 10;
-      }
-    } else {                               // First tap
-      disp.clear();                        // Clear display, but...
-      disp.writeDigitAscii(2, '-', true);  // a dot shows it's on
-      disp.writeDigitAscii(3, '-');
-    }
-    disp.writeDisplay();
-    prevBeat = t;                      // Record time of last tap
+  else if (idleDisplay && now - lastIdlePrint >= IDLE_DRAW_INTERVAL)
+  {
+    lastIdlePrint = now;
+    drawIdle();
   }
 }
