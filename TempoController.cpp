@@ -51,9 +51,9 @@ void TempoController::tick()
 
 void TempoController::draw()
 {
-    if (numBeats > 0)
+    if (numBeats > 1)
     {
-        int b = (sum / numBeats); // Average time per tap
+        int b = (sum / (numBeats - 1)); // Average time per tap
         if (b > 9999)
             b = 9999;
         for (int x = 3; x >= 0; x--)
