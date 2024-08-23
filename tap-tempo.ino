@@ -11,7 +11,7 @@ uint8_t resetPin = 3;
 bool idleDisplay = true;
 unsigned long lastIdlePrint = 0;
 
-const char idleString[] = "      Hello world ";
+const char idleString[] = "       BEATERMATCH";
 const unsigned long idleStringSize = sizeof(idleString) - 1;
 
 TempoController *tempoControllers[2] = {};
@@ -63,10 +63,11 @@ void loop()
 
   if (anyDraw)
   {
-    idleDisplay = false;
     for (int i = 0; i < tempoControllerCount; i++) {
-      tempoControllers[i]->draw();
+      TempoController *tc = tempoControllers[i];
+      if (idleDisplay || tc->wantsDraw) tc->draw();
     }
+    idleDisplay = false;
   }
   else if (idleDisplay && now - lastIdlePrint >= IDLE_DRAW_INTERVAL)
   {

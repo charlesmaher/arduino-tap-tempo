@@ -19,8 +19,8 @@ void TempoController::tick()
 {
     unsigned long now = micros();
 
-    if (prevBeat != 0 && now - prevBeat > 5000000L) {
-        prevBeat = 0;
+    if (numBeats != 0 && now - prevBeat > 5000000L) {
+        numBeats = 0;
         disp.setBrightness(4);
     }
 
@@ -31,16 +31,17 @@ void TempoController::tick()
     prevButton = state;
 
     // now debounced (theoretically)
-    
+
 
     if (!state) {
+        wantsDraw = true;
         if (numBeats == 0) {
+            clearData();
             disp.setBrightness(10);
             prevBeat = now;
-            numBeats++;
+            numBeats = 1;
             return;
         }
-        wantsDraw = true;
         lastChange = now;
         numBeats++;
         sum += 600000000L / (now - prevBeat);
